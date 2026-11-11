@@ -1,0 +1,142 @@
+name: Test report to Teams
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: Project1
+            api_port: 5003
+            web_port: 4200
+          - project: Project2
+            api_port: 5004
+            web_port: 4201
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: .NET unit tests
+        id: dotnet
+        continue-on-error: true
+        working-directory: ${{ matrix.project }}/api
+        run: dotnet test --logger "trx;LogFileName=results.trx"
+
+      - name: Angular unit tests
+        id: angular
+        continue-on-error: true
+        working-directory: ${{ matrix.project }}/web
+        run: |
+          npm ci
+          npx ng test --watch=false --reporters=junit --output-file=test-results/junit.xml
+
+      - name: Start the API and Angular app
+        timeout-minutes: 5
+        run: |
+          dotnet run --project ${{ matrix.project }}/api/SampleApi --urls http://127.0.0.1:${{ matrix.api_port }} > api.log 2>&1 &
+          (cd ${{ matrix.project }}/web && npx ng serve --host 127.0.0.1 --port ${{ matrix.web_port }} --proxy-config proxy.conf.json > ng.log 2>&1 &)
+          if ! npx --yes wait-on -t 180000 http-get://127.0.0.1:${{ matrix.api_port }}/api/health http-get://127.0.0.1:${{ matrix.web_port }}; then
+            echo "--- api.log"; cat api.log
+            echo "--- ng.log"; cat ${{ matrix.project }}/web/ng.log
+            exit 1
+          fi
+
+      - name: Bruno API tests
+        id: bruno
+        continue-on-error: true
+        working-directory: ${{ matrix.project }}/bruno
+        run: |
+          npm install
+          npm test
+
+      - name: Playwright UI tests
+        id: playwright
+        continue-on-error: true
+        working-directory: ${{ matrix.project }}/playwright
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+          npm test
+
+      - name: Summarise results
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          # Bruno writes one testsuite per request, so add them up. The other tools put totals on the first match.
+          sum()   { grep -o " $2=\"[0-9]*\"" "$1" 2>/dev/null | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}'; }
+          first() { grep -o " $2=\"[0-9]*\"" "$1" 2>/dev/null | head -1 | grep -o '[0-9]*' || echo 0; }
+          P=${{ matrix.project }}
+          TRX=$(find $P/api -name results.trx | head -1)
+          A=$P/web/test-results/junit.xml
+          B=$P/bruno/results/junit.xml
+          PW=$P/playwright/results/junit.xml
+          mkdir -p summary
+          {
+            echo "JOB_STATUS=$JOB_STATUS"
+            echo "D_TOTAL=$(first "$TRX" total)"
+            echo "D_FAILED=$(first "$TRX" failed)"
+            echo "A_TOTAL=$(first $A tests)"
+            echo "A_FAILED=$(( $(first $A failures) + $(first $A errors) ))"
+            echo "B_TOTAL=$(sum $B tests)"
+            echo "B_FAILED=$(( $(sum $B failures) + $(sum $B errors) ))"
+            echo "P_TOTAL=$(first $PW tests)"
+            echo "P_FAILED=$(( $(first $PW failures) + $(first $PW errors) ))"
+          } > summary/summary.env
+          cat summary/summary.env
+
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: summary-${{ matrix.project }}
+          path: summary/summary.env
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.project }}
+          path: ${{ matrix.project }}/playwright/playwright-report
+
+      - name: Fail the job if any tests failed
+        if: steps.dotnet.outcome == 'failure' || steps.angular.outcome == 'failure' || steps.bruno.outcome == 'failure' || steps.playwright.outcome == 'failure'
+        run: exit 1
+
+  report:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download project summaries
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: summary-*
+          path: summaries
+
+      - name: Send one report to Teams
+        env:
+          TEAMS_URL: ${{ secrets.TEAMS_WORKFLOW_URL }}
+          SUMMARY_DIR: summaries
+          COMMIT: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/teams-card.sh

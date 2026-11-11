@@ -2,10 +2,10 @@
 
 Two small sample apps, each laid out like a Zebra stripe: a .NET API with static data, an Angular page, API tests (Bruno) and UI tests (Playwright). Each project has its own GitHub Actions pipeline that posts its result to a Teams channel.
 
-| Project | Data | API port | Page port | Pipeline |
-|---|---|---|---|---|
-| `Project1` | Properties | 5003 | 4200 | `.github/workflows/project1.yml` |
-| `Project2` | Tenancies | 5004 | 4201 | `.github/workflows/project2.yml` |
+| Project | Data | API port | Page port |
+|---|---|---|---|
+| `Project1` | Properties | 5003 | 4200 |
+| `Project2` | Tenancies | 5004 | 4201 |
 
 Inside each project:
 
@@ -25,5 +25,5 @@ cd Project1/bruno && npm install && npm test                           # termina
 cd Project1/playwright && npm install && npx playwright install chromium && npm test
 ```
 
-## Pipelines
-Each pipeline needs one repository secret, `TEAMS_WORKFLOW_URL`, a Teams Workflows "post when a webhook request is received" URL. A pipeline runs on its own folder's changes or from the Actions tab.
+## Pipeline
+`.github/workflows/test-report.yml` runs both projects in parallel on every push to `main` (or from the Actions tab). A final job posts **one** Teams card with every test level for both projects. It needs one repository secret, `TEAMS_WORKFLOW_URL`, a Teams Workflows webhook URL.
