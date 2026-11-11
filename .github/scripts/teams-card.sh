@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds one results table (every project, one row per test level) and posts it to Teams.
+# Builds one results table (one row per project, one column per test level) and posts it to Teams.
 # Each project's test job leaves summaries/summary-<Project>/summary.env behind.
 # Set DRY_RUN=1 to print the card instead of posting it.
 set -euo pipefail
@@ -7,21 +7,19 @@ set -euo pipefail
 SUMMARY_DIR="${SUMMARY_DIR:-summaries}"
 PROJECTS=("Project1:Project 1" "Project2:Project 2")
 
-NOW=$(date -u +"%a, %d %b %Y %H:%M:%S GMT")
+NOW=$(date -u +"%d %b %Y %H:%M GMT")
 TODAY=$(date -u +"%a %b %d %Y")
 ANY_BAD=0
 ROWS=""
 
-cell() { # width text [color] [weight]
+col() { # width text [color] [weight]
   printf '{"type":"Column","width":%s,"items":[{"type":"TextBlock","text":"%s","wrap":true,"color":"%s","weight":"%s"}]}' "$1" "$2" "${3:-Default}" "${4:-Default}"
 }
 
-add_row() { # label level total failed
-  local status color
-  if [ "$3" = "0" ]; then status="no results"; color="Attention"; ANY_BAD=1
-  elif [ "$4" != "0" ]; then status="error"; color="Attention"; ANY_BAD=1
-  else status="success"; color="Good"; fi
-  ROWS="$ROWS,{\"type\":\"ColumnSet\",\"separator\":true,\"columns\":[$(cell 4 "$1 - $2"),$(cell 4 "$NOW"),$(cell 2 "$status" "$color"),$(cell 2 "$3"),$(cell 2 "$4")]}"
+level_col() { # total failed -> "passed/total", red when something failed or nothing ran
+  if [ "$1" = "0" ]; then col 2 "none" Attention
+  elif [ "$2" != "0" ]; then col 2 "$(($1 - $2))/$1" Attention
+  else col 2 "$1/$1" Good; fi
 }
 
 for entry in "${PROJECTS[@]}"; do
@@ -33,11 +31,16 @@ for entry in "${PROJECTS[@]}"; do
   if [ -f "$file" ]; then
     set -a; . "$file"; set +a
   fi
-  [ "$JOB_STATUS" = "success" ] || ANY_BAD=1
-  add_row "$label" "Backend unit (.NET)"   "$D_TOTAL" "$D_FAILED"
-  add_row "$label" "Angular unit (Vitest)" "$A_TOTAL" "$A_FAILED"
-  add_row "$label" "API (Bruno)"           "$B_TOTAL" "$B_FAILED"
-  add_row "$label" "UI (Playwright)"       "$P_TOTAL" "$P_FAILED"
+
+  TOTAL=$((D_TOTAL + A_TOTAL + B_TOTAL + P_TOTAL))
+  FAILED=$((D_FAILED + A_FAILED + B_FAILED + P_FAILED))
+  if [ "$FAILED" != "0" ]; then STATUS="error"
+  elif [ "$D_TOTAL" = "0" ] || [ "$A_TOTAL" = "0" ] || [ "$B_TOTAL" = "0" ] || [ "$P_TOTAL" = "0" ]; then STATUS="no results"
+  elif [ "$JOB_STATUS" != "success" ]; then STATUS="error"
+  else STATUS="success"; fi
+  if [ "$STATUS" = "success" ]; then COLOR="Good"; else COLOR="Attention"; ANY_BAD=1; fi
+
+  ROWS="$ROWS,{\"type\":\"ColumnSet\",\"separator\":true,\"columns\":[$(col 3 "$label"),$(level_col "$D_TOTAL" "$D_FAILED"),$(level_col "$A_TOTAL" "$A_FAILED"),$(level_col "$B_TOTAL" "$B_FAILED"),$(level_col "$P_TOTAL" "$P_FAILED"),$(col 3 "$NOW"),$(col 2 "$STATUS" "$COLOR"),$(col 2 "$TOTAL"),$(col 2 "$FAILED")]}"
 done
 
 if [ "$ANY_BAD" = "1" ]; then
@@ -48,7 +51,7 @@ else
   FOOTER_COLOR="Good"
 fi
 
-HEADER="{\"type\":\"ColumnSet\",\"separator\":true,\"columns\":[$(cell 4 Name Default Bolder),$(cell 4 "Last run" Default Bolder),$(cell 2 Status Default Bolder),$(cell 2 "Total Tests" Default Bolder),$(cell 2 "Failed Tests" Default Bolder)]}"
+HEADER="{\"type\":\"ColumnSet\",\"separator\":true,\"columns\":[$(col 3 Name Default Bolder),$(col 2 "API (.NET)" Default Bolder),$(col 2 Angular Default Bolder),$(col 2 Bruno Default Bolder),$(col 2 Playwright Default Bolder),$(col 3 "Last run" Default Bolder),$(col 2 Status Default Bolder),$(col 2 "Total Tests" Default Bolder),$(col 2 "Failed Tests" Default Bolder)]}"
 
 CARD=$(cat <<JSON
 {
@@ -60,7 +63,7 @@ CARD=$(cat <<JSON
       "version": "1.4",
       "body": [
         { "type": "TextBlock", "size": "Large", "weight": "Bolder", "wrap": true, "text": "Test Results $TODAY" },
-        { "type": "TextBlock", "wrap": true, "text": "Commit ${COMMIT:0:7} on ${BRANCH:-main} by ${ACTOR:-unknown}. Click [here]($RUN_URL) for more information" },
+        { "type": "TextBlock", "wrap": true, "text": "Commit ${COMMIT:0:7} on ${BRANCH:-main} by ${ACTOR:-unknown}. Click [here]($RUN_URL) for more information. Test columns show passed/total." },
         $HEADER$ROWS,
         { "type": "TextBlock", "wrap": true, "separator": true, "weight": "Bolder", "color": "$FOOTER_COLOR", "text": "$FOOTER_TEXT" }
       ]
