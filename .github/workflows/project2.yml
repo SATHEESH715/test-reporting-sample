@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["Project2/**", ".github/workflows/project2.yml"]
+    paths: ["Project2/**", ".github/workflows/project2.yml", ".github/scripts/**"]
 
 jobs:
   test-and-report:
@@ -87,6 +87,7 @@ jobs:
         if: always()
         env:
           TEAMS_URL: ${{ secrets.TEAMS_WORKFLOW_URL }}
+          PROJECT: Project 2
           JOB_STATUS: ${{ job.status }}
           D_TOTAL: ${{ steps.summary.outputs.d_total }}
           D_FAILED: ${{ steps.summary.outputs.d_failed }}
@@ -97,33 +98,7 @@ jobs:
           P_TOTAL: ${{ steps.summary.outputs.p_total }}
           P_FAILED: ${{ steps.summary.outputs.p_failed }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          FAILED=$(( D_FAILED + A_FAILED + B_FAILED + P_FAILED ))
-          if [ "$FAILED" != "0" ] || [ "$JOB_STATUS" != "success" ] || [ "$B_TOTAL" = "0" ] || [ "$P_TOTAL" = "0" ]; then ICON="🔴 Failing"; else ICON="🟢 Passing"; fi
-          curl -s -X POST "$TEAMS_URL" -H "Content-Type: application/json" -d @- <<JSON
-          {
-            "type": "message",
-            "attachments": [{
-              "contentType": "application/vnd.microsoft.card.adaptive",
-              "content": {
-                "type": "AdaptiveCard",
-                "version": "1.4",
-                "body": [
-                  { "type": "TextBlock", "weight": "Bolder", "size": "Medium",
-                    "text": "$ICON: Project 2 (${{ github.ref_name }})" },
-                  { "type": "FactSet", "facts": [
-                    { "title": "Backend unit (.NET)", "value": "$D_TOTAL total, $D_FAILED failed" },
-                    { "title": "Angular unit (Vitest)", "value": "$A_TOTAL total, $A_FAILED failed" },
-                    { "title": "API (Bruno)", "value": "$B_TOTAL total, $B_FAILED failed" },
-                    { "title": "UI (Playwright)", "value": "$P_TOTAL total, $P_FAILED failed" },
-                    { "title": "Commit", "value": "${{ github.sha }}" }
-                  ]}
-                ],
-                "actions": [{ "type": "Action.OpenUrl", "title": "View run", "url": "$RUN_URL" }]
-              }
-            }]
-          }
-          JSON
+        run: bash .github/scripts/teams-card.sh
 
       - name: Upload Playwright report
         if: always()
