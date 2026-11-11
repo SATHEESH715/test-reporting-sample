@@ -1,0 +1,129 @@
+name: All tests - report to Teams
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  test-and-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: .NET unit tests
+        id: dotnet
+        continue-on-error: true
+        working-directory: api
+        run: dotnet test --logger "trx;LogFileName=results.trx"
+
+      - name: Angular unit tests
+        id: angular
+        continue-on-error: true
+        working-directory: web
+        run: |
+          npm ci
+          npx ng test --watch=false --reporters=junit --output-file=test-results/junit.xml
+
+      - name: Start the API and Angular app
+        run: |
+          dotnet run --project api/SampleApi --urls http://localhost:5003 > api.log 2>&1 &
+          (cd web && npx ng serve --proxy-config proxy.conf.json > ng.log 2>&1 &)
+          npx --yes wait-on http://localhost:5003/api/health http://localhost:4200
+
+      - name: Bruno API tests
+        id: bruno
+        continue-on-error: true
+        working-directory: bruno
+        run: |
+          npm install
+          npm test
+
+      - name: Playwright UI tests
+        id: playwright
+        continue-on-error: true
+        working-directory: playwright
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+          npm test
+
+      - name: Summarise results
+        id: summary
+        if: always()
+        run: |
+          # Bruno writes one testsuite per request, so add them up. The other tools put totals on the first match.
+          sum()   { grep -o " $2=\"[0-9]*\"" "$1" 2>/dev/null | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}'; }
+          first() { grep -o " $2=\"[0-9]*\"" "$1" 2>/dev/null | head -1 | grep -o '[0-9]*' || echo 0; }
+          TRX=$(find api -name results.trx | head -1)
+          echo "d_total=$(first "$TRX" total)" >> "$GITHUB_OUTPUT"
+          echo "d_failed=$(first "$TRX" failed)" >> "$GITHUB_OUTPUT"
+          A=web/test-results/junit.xml
+          echo "a_total=$(first $A tests)" >> "$GITHUB_OUTPUT"
+          echo "a_failed=$(( $(first $A failures) + $(first $A errors) ))" >> "$GITHUB_OUTPUT"
+          B=bruno/results/junit.xml
+          echo "b_total=$(sum $B tests)" >> "$GITHUB_OUTPUT"
+          echo "b_failed=$(( $(sum $B failures) + $(sum $B errors) ))" >> "$GITHUB_OUTPUT"
+          P=playwright/results/junit.xml
+          echo "p_total=$(first $P tests)" >> "$GITHUB_OUTPUT"
+          echo "p_failed=$(( $(first $P failures) + $(first $P errors) ))" >> "$GITHUB_OUTPUT"
+
+      - name: Send report to Teams
+        if: always()
+        env:
+          TEAMS_URL: ${{ secrets.TEAMS_WORKFLOW_URL }}
+          D_TOTAL: ${{ steps.summary.outputs.d_total }}
+          D_FAILED: ${{ steps.summary.outputs.d_failed }}
+          A_TOTAL: ${{ steps.summary.outputs.a_total }}
+          A_FAILED: ${{ steps.summary.outputs.a_failed }}
+          B_TOTAL: ${{ steps.summary.outputs.b_total }}
+          B_FAILED: ${{ steps.summary.outputs.b_failed }}
+          P_TOTAL: ${{ steps.summary.outputs.p_total }}
+          P_FAILED: ${{ steps.summary.outputs.p_failed }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          FAILED=$(( D_FAILED + A_FAILED + B_FAILED + P_FAILED ))
+          if [ "$FAILED" != "0" ]; then ICON="🔴 Failing"; else ICON="🟢 Passing"; fi
+          curl -s -X POST "$TEAMS_URL" -H "Content-Type: application/json" -d @- <<JSON
+          {
+            "type": "message",
+            "attachments": [{
+              "contentType": "application/vnd.microsoft.card.adaptive",
+              "content": {
+                "type": "AdaptiveCard",
+                "version": "1.4",
+                "body": [
+                  { "type": "TextBlock", "weight": "Bolder", "size": "Medium",
+                    "text": "$ICON: Test reporting sample (${{ github.ref_name }})" },
+                  { "type": "FactSet", "facts": [
+                    { "title": "Backend unit (.NET)", "value": "$D_TOTAL total, $D_FAILED failed" },
+                    { "title": "Angular unit (Vitest)", "value": "$A_TOTAL total, $A_FAILED failed" },
+                    { "title": "API (Bruno)", "value": "$B_TOTAL total, $B_FAILED failed" },
+                    { "title": "UI (Playwright)", "value": "$P_TOTAL total, $P_FAILED failed" },
+                    { "title": "Commit", "value": "${{ github.sha }}" }
+                  ]}
+                ],
+                "actions": [{ "type": "Action.OpenUrl", "title": "View run", "url": "$RUN_URL" }]
+              }
+            }]
+          }
+          JSON
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright/playwright-report
+
+      - name: Fail the job if any tests failed
+        if: steps.dotnet.outcome == 'failure' || steps.angular.outcome == 'failure' || steps.bruno.outcome == 'failure' || steps.playwright.outcome == 'failure'
+        run: exit 1

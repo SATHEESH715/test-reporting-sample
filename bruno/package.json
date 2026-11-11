@@ -1,0 +1,10 @@
+{
+  "name": "sample-bruno-tests",
+  "private": true,
+  "scripts": {
+    "test": "node -e \"require('fs').mkdirSync('results',{recursive:true})\" && bru run --env local --reporter-junit results/junit.xml"
+  },
+  "devDependencies": {
+    "@usebruno/cli": "^2.0.0"
+  }
+}

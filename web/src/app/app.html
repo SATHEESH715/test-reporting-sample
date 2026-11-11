@@ -1,0 +1,17 @@
+<main>
+  <h1 data-testid="page-title">Properties</h1>
+  <table data-testid="property-table">
+    <thead>
+      <tr><th>Number</th><th>Address</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      @for (p of properties(); track p.id) {
+        <tr [attr.data-testid]="'property-row-' + p.id">
+          <td>{{ p.propertyNumber }}</td>
+          <td>{{ p.address }}</td>
+          <td>{{ p.status }}</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</main>

@@ -1,0 +1,29 @@
+meta {
+  name: Properties returns three items
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/properties
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns three properties", function() {
+    expect(res.getBody().length).to.equal(3);
+  });
+
+  test("each property has an id, number and address", function() {
+    res.getBody().forEach(function(p) {
+      expect(p).to.have.property("id");
+      expect(p).to.have.property("propertyNumber");
+      expect(p).to.have.property("address");
+    });
+  });
+}
