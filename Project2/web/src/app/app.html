@@ -1,0 +1,18 @@
+<main>
+  <h1 data-testid="page-title">Tenancies</h1>
+  <table data-testid="tenancy-table">
+    <thead>
+      <tr><th>Number</th><th>Tenant</th><th>Property</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      @for (t of tenancies(); track t.id) {
+        <tr [attr.data-testid]="'tenancy-row-' + t.id">
+          <td>{{ t.tenancyNumber }}</td>
+          <td>{{ t.tenant }}</td>
+          <td>{{ t.property }}</td>
+          <td>{{ t.status }}</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</main>

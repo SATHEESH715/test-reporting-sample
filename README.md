@@ -1,21 +1,29 @@
 # Test reporting sample
 
-One repo with a .NET API, an Angular page, and all test levels. A single GitHub Actions pipeline runs them and posts the result to a Teams channel.
+Two small sample apps, each laid out like a Zebra stripe: a .NET API with static data, an Angular page, API tests (Bruno) and UI tests (Playwright). Each project has its own GitHub Actions pipeline that posts its result to a Teams channel.
+
+| Project | Data | API port | Page port | Pipeline |
+|---|---|---|---|---|
+| `Project1` | Properties | 5003 | 4200 | `.github/workflows/project1.yml` |
+| `Project2` | Tenancies | 5004 | 4201 | `.github/workflows/project2.yml` |
+
+Inside each project:
 
 | Folder | What it is | Tests |
 |---|---|---|
-| `api/` | .NET 10 minimal API with static data (`/api/properties`, `/api/health`) | MSTest |
-| `web/` | Angular page that lists the properties | Vitest |
-| `bruno/` | API tests against the running API | Bruno CLI |
-| `playwright/` | UI tests against the running page | Playwright |
+| `api/` | .NET 10 minimal API | MSTest |
+| `web/` | Angular page | Vitest |
+| `bruno/` | API tests | Bruno CLI |
+| `playwright/` | UI tests | Playwright |
 
-## Run locally
+## Run one project locally
+Replace `Project1` with `Project2` as needed, and use the ports in the table above.
 ```bash
-cd api/SampleApi && dotnet run --urls http://localhost:5003   # terminal 1
-cd web && npm install && npm start                            # terminal 2, http://localhost:4200
-cd bruno && npm install && npm test                           # terminal 3
-cd playwright && npm install && npx playwright install chromium && npm test
+cd Project1/api/SampleApi && dotnet run --urls http://localhost:5003   # terminal 1
+cd Project1/web && npm install && npm start                            # terminal 2
+cd Project1/bruno && npm install && npm test                           # terminal 3
+cd Project1/playwright && npm install && npx playwright install chromium && npm test
 ```
 
-## Pipeline
-`.github/workflows/test-report.yml` needs one repository secret, `TEAMS_WORKFLOW_URL` (a Teams Workflows "post when a webhook request is received" URL).
+## Pipelines
+Each pipeline needs one repository secret, `TEAMS_WORKFLOW_URL`, a Teams Workflows "post when a webhook request is received" URL. A pipeline runs on its own folder's changes or from the Actions tab.

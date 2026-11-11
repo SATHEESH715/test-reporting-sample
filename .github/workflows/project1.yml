@@ -1,9 +1,10 @@
-name: All tests - report to Teams
+name: Project 1 tests - report to Teams
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths: ["Project1/**", ".github/workflows/project1.yml"]
 
 jobs:
   test-and-report:
@@ -22,27 +23,27 @@ jobs:
       - name: .NET unit tests
         id: dotnet
         continue-on-error: true
-        working-directory: api
+        working-directory: Project1/api
         run: dotnet test --logger "trx;LogFileName=results.trx"
 
       - name: Angular unit tests
         id: angular
         continue-on-error: true
-        working-directory: web
+        working-directory: Project1/web
         run: |
           npm ci
           npx ng test --watch=false --reporters=junit --output-file=test-results/junit.xml
 
       - name: Start the API and Angular app
         run: |
-          dotnet run --project api/SampleApi --urls http://localhost:5003 > api.log 2>&1 &
-          (cd web && npx ng serve --proxy-config proxy.conf.json > ng.log 2>&1 &)
+          dotnet run --project Project1/api/SampleApi --urls http://localhost:5003 > api.log 2>&1 &
+          (cd Project1/web && npx ng serve --proxy-config proxy.conf.json > ng.log 2>&1 &)
           npx --yes wait-on http://localhost:5003/api/health http://localhost:4200
 
       - name: Bruno API tests
         id: bruno
         continue-on-error: true
-        working-directory: bruno
+        working-directory: Project1/bruno
         run: |
           npm install
           npm test
@@ -50,7 +51,7 @@ jobs:
       - name: Playwright UI tests
         id: playwright
         continue-on-error: true
-        working-directory: playwright
+        working-directory: Project1/playwright
         run: |
           npm install
           npx playwright install --with-deps chromium
@@ -63,16 +64,16 @@ jobs:
           # Bruno writes one testsuite per request, so add them up. The other tools put totals on the first match.
           sum()   { grep -o " $2=\"[0-9]*\"" "$1" 2>/dev/null | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}'; }
           first() { grep -o " $2=\"[0-9]*\"" "$1" 2>/dev/null | head -1 | grep -o '[0-9]*' || echo 0; }
-          TRX=$(find api -name results.trx | head -1)
+          TRX=$(find Project1/api -name results.trx | head -1)
           echo "d_total=$(first "$TRX" total)" >> "$GITHUB_OUTPUT"
           echo "d_failed=$(first "$TRX" failed)" >> "$GITHUB_OUTPUT"
-          A=web/test-results/junit.xml
+          A=Project1/web/test-results/junit.xml
           echo "a_total=$(first $A tests)" >> "$GITHUB_OUTPUT"
           echo "a_failed=$(( $(first $A failures) + $(first $A errors) ))" >> "$GITHUB_OUTPUT"
-          B=bruno/results/junit.xml
+          B=Project1/bruno/results/junit.xml
           echo "b_total=$(sum $B tests)" >> "$GITHUB_OUTPUT"
           echo "b_failed=$(( $(sum $B failures) + $(sum $B errors) ))" >> "$GITHUB_OUTPUT"
-          P=playwright/results/junit.xml
+          P=Project1/playwright/results/junit.xml
           echo "p_total=$(first $P tests)" >> "$GITHUB_OUTPUT"
           echo "p_failed=$(( $(first $P failures) + $(first $P errors) ))" >> "$GITHUB_OUTPUT"
 
@@ -102,7 +103,7 @@ jobs:
                 "version": "1.4",
                 "body": [
                   { "type": "TextBlock", "weight": "Bolder", "size": "Medium",
-                    "text": "$ICON: Test reporting sample (${{ github.ref_name }})" },
+                    "text": "$ICON: Project 1 (${{ github.ref_name }})" },
                   { "type": "FactSet", "facts": [
                     { "title": "Backend unit (.NET)", "value": "$D_TOTAL total, $D_FAILED failed" },
                     { "title": "Angular unit (Vitest)", "value": "$A_TOTAL total, $A_FAILED failed" },
@@ -121,8 +122,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
-          path: playwright/playwright-report
+          name: project1-playwright-report
+          path: Project1/playwright/playwright-report
 
       - name: Fail the job if any tests failed
         if: steps.dotnet.outcome == 'failure' || steps.angular.outcome == 'failure' || steps.bruno.outcome == 'failure' || steps.playwright.outcome == 'failure'
