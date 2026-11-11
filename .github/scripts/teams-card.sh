@@ -12,8 +12,9 @@ TODAY=$(date -u +"%a %b %d %Y")
 ANY_BAD=0
 ROWS=""
 
-col() { # width text [color] [weight]
-  printf '{"type":"Column","width":%s,"items":[{"type":"TextBlock","text":"%s","wrap":true,"color":"%s","weight":"%s"}]}' "$1" "$2" "${3:-Default}" "${4:-Default}"
+col() { # width text [color] [weight]. Width 2 columns hold numbers and statuses, so they are centred.
+  local align=Left; [ "$1" = "2" ] && align=Center
+  printf '{"type":"Column","width":%s,"verticalContentAlignment":"Center","items":[{"type":"TextBlock","text":"%s","wrap":true,"color":"%s","weight":"%s","horizontalAlignment":"%s"}]}' "$1" "$2" "${3:-Default}" "${4:-Default}" "$align"
 }
 
 level_col() { # total failed -> "passed/total", red when something failed or nothing ran
@@ -61,6 +62,7 @@ CARD=$(cat <<JSON
     "content": {
       "type": "AdaptiveCard",
       "version": "1.4",
+      "msteams": { "width": "Full" },
       "body": [
         { "type": "TextBlock", "size": "Large", "weight": "Bolder", "wrap": true, "text": "Test Results $TODAY" },
         { "type": "TextBlock", "wrap": true, "text": "Commit ${COMMIT:0:7} on ${BRANCH:-main} by ${ACTOR:-unknown}. Click [here]($RUN_URL) for more information. Test columns show passed/total." },
