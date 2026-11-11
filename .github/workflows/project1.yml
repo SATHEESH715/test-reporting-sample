@@ -40,7 +40,7 @@ jobs:
         run: |
           dotnet run --project Project1/api/SampleApi --urls http://127.0.0.1:5003 > api.log 2>&1 &
           (cd Project1/web && npx ng serve --host 127.0.0.1 --proxy-config proxy.conf.json > ng.log 2>&1 &)
-          if ! npx --yes wait-on -t 180000 http://127.0.0.1:5003/api/health http://127.0.0.1:4200; then
+          if ! npx --yes wait-on -t 180000 http-get://127.0.0.1:5003/api/health http-get://127.0.0.1:4200; then
             echo "--- api.log"; cat api.log
             echo "--- ng.log"; cat Project1/web/ng.log
             exit 1
