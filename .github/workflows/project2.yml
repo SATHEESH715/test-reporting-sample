@@ -38,11 +38,11 @@ jobs:
       - name: Start the API and Angular app
         timeout-minutes: 5
         run: |
-          dotnet run --project Project2/api/SampleApi --urls http://localhost:5004 > api.log 2>&1 &
+          dotnet run --project Project2/api/SampleApi --urls http://127.0.0.1:5004 > api.log 2>&1 &
           (cd Project2/web && npx ng serve --host 127.0.0.1 --port 4201 --proxy-config proxy.conf.json > ng.log 2>&1 &)
           if ! npx --yes wait-on -t 180000 http://127.0.0.1:5004/api/health http://127.0.0.1:4201; then
             echo "--- api.log"; cat api.log
-            echo "--- ng.log"; cat ng.log
+            echo "--- ng.log"; cat Project2/web/ng.log
             exit 1
           fi
 
@@ -87,6 +87,7 @@ jobs:
         if: always()
         env:
           TEAMS_URL: ${{ secrets.TEAMS_WORKFLOW_URL }}
+          JOB_STATUS: ${{ job.status }}
           D_TOTAL: ${{ steps.summary.outputs.d_total }}
           D_FAILED: ${{ steps.summary.outputs.d_failed }}
           A_TOTAL: ${{ steps.summary.outputs.a_total }}
@@ -98,7 +99,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           FAILED=$(( D_FAILED + A_FAILED + B_FAILED + P_FAILED ))
-          if [ "$FAILED" != "0" ]; then ICON="🔴 Failing"; else ICON="🟢 Passing"; fi
+          if [ "$FAILED" != "0" ] || [ "$JOB_STATUS" != "success" ] || [ "$B_TOTAL" = "0" ] || [ "$P_TOTAL" = "0" ]; then ICON="🔴 Failing"; else ICON="🟢 Passing"; fi
           curl -s -X POST "$TEAMS_URL" -H "Content-Type: application/json" -d @- <<JSON
           {
             "type": "message",
